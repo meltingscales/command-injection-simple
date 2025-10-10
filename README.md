@@ -25,6 +25,7 @@ This lab provides two versions of a web-based sleep timer:
 ├── vulnerable.php      # Vulnerable backend (command injection)
 ├── safe.php           # Secure backend (properly validated)
 ├── Dockerfile         # Container configuration
+├── justfile           # Command runner with all deployment commands
 ├── .dockerignore      # Docker ignore file
 └── README.md          # This file
 ```
@@ -33,28 +34,42 @@ This lab provides two versions of a web-based sleep timer:
 
 ### Prerequisites
 - Docker installed on your system
+- [just](https://github.com/casey/just) command runner (optional but recommended)
 
 ### Running Locally
 
-1. Build the Docker image:
+Using just (recommended):
 ```bash
+# Build and run in one command
+just up
+
+# Or run individual commands
+just build
+just run
+
+# View logs
+just logs
+
+# Stop the container
+just stop
+
+# Clean up everything
+just clean
+```
+
+Or using Docker directly:
+```bash
+# Build the Docker image
 docker build -t command-injection-lab .
-```
 
-2. Run the container:
-```bash
-docker run -d -p 8080:80 --name cmd-injection-lab command-injection-lab
-```
+# Run the container
+docker run -d -p 8080:80 --name command-injection-lab command-injection-lab
 
-3. Access the application:
-```
-http://localhost:8080
-```
+# Access at http://localhost:8080
 
-4. Stop the container:
-```bash
-docker stop cmd-injection-lab
-docker rm cmd-injection-lab
+# Stop the container
+docker stop command-injection-lab
+docker rm command-injection-lab
 ```
 
 ## Deployment to Google Cloud Platform (GCP)
@@ -64,212 +79,149 @@ docker rm cmd-injection-lab
 - Google Cloud account with billing enabled
 - `gcloud` CLI installed and configured
 - Project created in GCP
+- [just](https://github.com/casey/just) command runner (optional but recommended)
+
+### Configuration
+
+Set your GCP project configuration:
+
+```bash
+# Set environment variables (or edit justfile defaults)
+export PROJECT_ID="your-project-id"
+export REGION="us-central1"
+export ZONE="us-central1-a"
+
+# View current configuration
+just config
+```
 
 ### Option 1: Deploy to Cloud Run (Recommended)
 
 Cloud Run is a managed serverless platform that's cost-effective and easy to use.
 
-#### Step 1: Set up gcloud
-
+Using just:
 ```bash
-# Login to Google Cloud
-gcloud auth login
+# Setup GCP project (first time only)
+just gcp-setup
 
-# Set your project ID
+# Build, deploy, and get URL in one command
+just cloudrun-up
+
+# Or run individual steps
+just cloudrun-build
+just cloudrun-deploy
+just cloudrun-url
+
+# View logs
+just cloudrun-logs
+
+# Clean up
+just cloudrun-down
+```
+
+Or using gcloud directly:
+```bash
+# Login and configure
+gcloud auth login
 export PROJECT_ID="your-project-id"
+export REGION="us-central1"
 gcloud config set project $PROJECT_ID
 
-# Enable required APIs
-gcloud services enable cloudbuild.googleapis.com
-gcloud services enable run.googleapis.com
-gcloud services enable artifactregistry.googleapis.com
-```
+# Enable APIs
+gcloud services enable cloudbuild.googleapis.com run.googleapis.com
 
-#### Step 2: Build and push the container
-
-```bash
-# Set region
-export REGION="us-central1"
-
-# Build the image using Cloud Build
+# Build and deploy
 gcloud builds submit --tag gcr.io/$PROJECT_ID/command-injection-lab
-```
-
-#### Step 3: Deploy to Cloud Run
-
-```bash
-# Deploy the container
 gcloud run deploy command-injection-lab \
   --image gcr.io/$PROJECT_ID/command-injection-lab \
-  --platform managed \
-  --region $REGION \
-  --allow-unauthenticated \
-  --port 80 \
-  --memory 512Mi
+  --platform managed --region $REGION \
+  --allow-unauthenticated --port 80 --memory 512Mi
 
-# Get the deployed URL
+# Get URL
 gcloud run services describe command-injection-lab \
-  --region $REGION \
-  --format 'value(status.url)'
-```
-
-#### Step 4: Access your application
-
-The command above will output a URL like: `https://command-injection-lab-xxxxx-uc.a.run.app`
-
-Visit this URL to access your lab.
-
-#### Clean up Cloud Run deployment
-
-```bash
-# Delete the service
-gcloud run services delete command-injection-lab --region $REGION
-
-# Delete the container image
-gcloud container images delete gcr.io/$PROJECT_ID/command-injection-lab
+  --region $REGION --format 'value(status.url)'
 ```
 
 ### Option 2: Deploy to Google Kubernetes Engine (GKE)
 
 For more control and learning about Kubernetes deployments.
 
-#### Step 1: Create a GKE cluster
-
+Using just:
 ```bash
-# Set variables
-export CLUSTER_NAME="cmd-injection-cluster"
-export ZONE="us-central1-a"
+# Create cluster
+just gke-create-cluster
 
-# Create a small cluster
-gcloud container clusters create $CLUSTER_NAME \
-  --zone $ZONE \
-  --num-nodes 2 \
-  --machine-type e2-small \
-  --enable-autoscaling \
-  --min-nodes 1 \
-  --max-nodes 3
+# Setup Artifact Registry
+just gke-setup-registry
 
-# Get credentials
-gcloud container clusters get-credentials $CLUSTER_NAME --zone $ZONE
+# Build and push image
+just gke-build
+
+# Deploy to GKE (generates k8s-deployment.yaml and applies it)
+just gke-deploy
+
+# Get external IP (run after a few minutes)
+just gke-ip
+
+# Clean up
+just gke-down
 ```
 
-#### Step 2: Build and push image to Artifact Registry
-
+Or using gcloud/kubectl directly:
 ```bash
-# Create repository
-gcloud artifacts repositories create docker-repo \
-  --repository-format=docker \
-  --location=$REGION
+# Create cluster
+gcloud container clusters create cmd-injection-cluster \
+  --zone us-central1-a --num-nodes 2 --machine-type e2-small
 
-# Configure Docker
+# Setup registry
+gcloud artifacts repositories create docker-repo \
+  --repository-format=docker --location=$REGION
 gcloud auth configure-docker ${REGION}-docker.pkg.dev
 
 # Build and push
 docker build -t ${REGION}-docker.pkg.dev/$PROJECT_ID/docker-repo/command-injection-lab:v1 .
 docker push ${REGION}-docker.pkg.dev/$PROJECT_ID/docker-repo/command-injection-lab:v1
-```
 
-#### Step 3: Deploy to GKE
-
-Create a deployment file `k8s-deployment.yaml`:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: command-injection-lab
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: command-injection-lab
-  template:
-    metadata:
-      labels:
-        app: command-injection-lab
-    spec:
-      containers:
-      - name: command-injection-lab
-        image: REGION-docker.pkg.dev/PROJECT_ID/docker-repo/command-injection-lab:v1
-        ports:
-        - containerPort: 80
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: command-injection-lab
-spec:
-  type: LoadBalancer
-  selector:
-    app: command-injection-lab
-  ports:
-  - port: 80
-    targetPort: 80
-```
-
-Deploy:
-
-```bash
-# Update the YAML with your values
-sed -i "s/REGION/$REGION/g" k8s-deployment.yaml
-sed -i "s/PROJECT_ID/$PROJECT_ID/g" k8s-deployment.yaml
-
-# Apply the deployment
+# Deploy (create k8s-deployment.yaml first, see justfile for template)
 kubectl apply -f k8s-deployment.yaml
-
-# Wait for external IP
 kubectl get service command-injection-lab --watch
-```
-
-#### Clean up GKE deployment
-
-```bash
-# Delete Kubernetes resources
-kubectl delete -f k8s-deployment.yaml
-
-# Delete the cluster
-gcloud container clusters delete $CLUSTER_NAME --zone $ZONE
 ```
 
 ### Option 3: Deploy to Compute Engine (VM)
 
 For maximum control over the environment.
 
-#### Step 1: Create a VM instance
-
+Using just:
 ```bash
-# Create VM with container-optimized OS
+# Deploy VM (requires image built to GCR first)
+just cloudrun-build  # Build image to GCR
+just compute-deploy
+
+# Get external IP
+just compute-ip
+
+# SSH into VM (optional)
+just compute-ssh
+
+# Clean up
+just compute-down
+```
+
+Or using gcloud directly:
+```bash
+# Deploy VM with container
 gcloud compute instances create-with-container cmd-injection-vm \
   --container-image=gcr.io/$PROJECT_ID/command-injection-lab \
-  --machine-type=e2-micro \
-  --zone=us-central1-a \
-  --tags=http-server
+  --machine-type=e2-micro --zone=us-central1-a --tags=http-server
 
 # Create firewall rule
 gcloud compute firewall-rules create allow-http \
-  --allow tcp:80 \
-  --target-tags http-server \
-  --source-ranges 0.0.0.0/0
-```
+  --allow tcp:80 --target-tags http-server --source-ranges 0.0.0.0/0
 
-#### Step 2: Get the external IP
-
-```bash
+# Get IP
 gcloud compute instances describe cmd-injection-vm \
   --zone=us-central1-a \
   --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
-```
-
-Visit `http://EXTERNAL_IP` to access the lab.
-
-#### Clean up Compute Engine deployment
-
-```bash
-# Delete the VM
-gcloud compute instances delete cmd-injection-vm --zone=us-central1-a
-
-# Delete firewall rule
-gcloud compute firewall-rules delete allow-http
 ```
 
 ## Understanding the Vulnerabilities
@@ -345,30 +297,41 @@ $safe_seconds = escapeshellarg($seconds_int);
 - **e2-micro**: ~$7-10/month
 - **Best for**: Long-running instances
 
+## Available Just Commands
+
+Run `just` or `just --list` to see all available commands:
+
+```bash
+just --list
+```
+
+Key commands:
+- **Local**: `up`, `build`, `run`, `stop`, `logs`, `restart`, `clean`
+- **Cloud Run**: `cloudrun-up`, `cloudrun-build`, `cloudrun-deploy`, `cloudrun-url`, `cloudrun-logs`, `cloudrun-down`
+- **GKE**: `gke-create-cluster`, `gke-setup-registry`, `gke-build`, `gke-deploy`, `gke-ip`, `gke-down`
+- **Compute Engine**: `compute-deploy`, `compute-ip`, `compute-ssh`, `compute-down`
+- **Setup**: `gcp-setup`, `config`
+
 ## Troubleshooting
 
 ### Container won't start
 ```bash
-# Check logs
-docker logs cmd-injection-lab
+# Check logs locally
+just logs
+# Or: docker logs command-injection-lab
 
-# Or for Cloud Run
-gcloud run services logs read command-injection-lab --region $REGION
+# For Cloud Run
+just cloudrun-logs
 ```
 
-### Permission issues
+### View current configuration
 ```bash
-# Ensure proper permissions in container
-docker exec -it cmd-injection-lab ls -la /var/www/html
+just config
 ```
 
-### Firewall issues
+### Test endpoints locally
 ```bash
-# List firewall rules
-gcloud compute firewall-rules list
-
-# Ensure HTTP access is allowed
-gcloud compute firewall-rules describe allow-http
+just test
 ```
 
 ## Learning Resources
