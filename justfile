@@ -43,156 +43,58 @@ clean:
     -docker rm {{image_name}}
     -docker rmi {{image_name}}
 
-# === GCP Setup ===
+# === GCP Compute Engine Deployment ===
 
-# Configure gcloud project
-gcp-setup:
-    @echo "Setting up GCP project: {{project_id}}"
-    gcloud config set project {{project_id}}
-    gcloud services enable cloudbuild.googleapis.com
-    gcloud services enable run.googleapis.com
-    gcloud services enable artifactregistry.googleapis.com
-    @echo "GCP setup complete!"
-
-# === Cloud Run Deployment ===
-
-# Build image using Cloud Build
-cloudrun-build:
-    gcloud builds submit --tag gcr.io/{{project_id}}/{{image_name}}
-
-# Deploy to Cloud Run
-cloudrun-deploy:
-    gcloud run deploy {{image_name}} \
-        --image gcr.io/{{project_id}}/{{image_name}} \
-        --platform managed \
-        --region {{region}} \
-        --allow-unauthenticated \
-        --port 80 \
-        --memory 512Mi
-
-# Build and deploy to Cloud Run
-cloudrun-up: cloudrun-build cloudrun-deploy
-    @echo "\nDeployment complete! Getting URL..."
-    @just cloudrun-url
-
-# Get Cloud Run service URL
-cloudrun-url:
-    @gcloud run services describe {{image_name}} \
-        --region {{region}} \
-        --format 'value(status.url)'
-
-# View Cloud Run logs
-cloudrun-logs:
-    gcloud run services logs read {{image_name}} --region {{region}}
-
-# Delete Cloud Run service
-cloudrun-down:
-    gcloud run services delete {{image_name}} --region {{region}} --quiet
-    gcloud container images delete gcr.io/{{project_id}}/{{image_name}} --quiet
-
-# === GKE Deployment ===
-
-# Create GKE cluster
-gke-create-cluster:
-    gcloud container clusters create cmd-injection-cluster \
-        --zone {{zone}} \
-        --num-nodes 2 \
-        --machine-type e2-small \
-        --enable-autoscaling \
-        --min-nodes 1 \
-        --max-nodes 3
-    gcloud container clusters get-credentials cmd-injection-cluster --zone {{zone}}
-
-# Setup Artifact Registry
-gke-setup-registry:
-    gcloud artifacts repositories create docker-repo \
-        --repository-format=docker \
-        --location={{region}}
-    gcloud auth configure-docker {{region}}-docker.pkg.dev
-
-# Build and push to Artifact Registry
-gke-build:
-    docker build -t {{region}}-docker.pkg.dev/{{project_id}}/docker-repo/{{image_name}}:v1 .
-    docker push {{region}}-docker.pkg.dev/{{project_id}}/docker-repo/{{image_name}}:v1
-
-# Generate Kubernetes deployment file
-gke-generate-yaml:
-    @echo "apiVersion: apps/v1" > k8s-deployment.yaml
-    @echo "kind: Deployment" >> k8s-deployment.yaml
-    @echo "metadata:" >> k8s-deployment.yaml
-    @echo "  name: {{image_name}}" >> k8s-deployment.yaml
-    @echo "spec:" >> k8s-deployment.yaml
-    @echo "  replicas: 2" >> k8s-deployment.yaml
-    @echo "  selector:" >> k8s-deployment.yaml
-    @echo "    matchLabels:" >> k8s-deployment.yaml
-    @echo "      app: {{image_name}}" >> k8s-deployment.yaml
-    @echo "  template:" >> k8s-deployment.yaml
-    @echo "    metadata:" >> k8s-deployment.yaml
-    @echo "      labels:" >> k8s-deployment.yaml
-    @echo "        app: {{image_name}}" >> k8s-deployment.yaml
-    @echo "    spec:" >> k8s-deployment.yaml
-    @echo "      containers:" >> k8s-deployment.yaml
-    @echo "      - name: {{image_name}}" >> k8s-deployment.yaml
-    @echo "        image: {{region}}-docker.pkg.dev/{{project_id}}/docker-repo/{{image_name}}:v1" >> k8s-deployment.yaml
-    @echo "        ports:" >> k8s-deployment.yaml
-    @echo "        - containerPort: 80" >> k8s-deployment.yaml
-    @echo "---" >> k8s-deployment.yaml
-    @echo "apiVersion: v1" >> k8s-deployment.yaml
-    @echo "kind: Service" >> k8s-deployment.yaml
-    @echo "metadata:" >> k8s-deployment.yaml
-    @echo "  name: {{image_name}}" >> k8s-deployment.yaml
-    @echo "spec:" >> k8s-deployment.yaml
-    @echo "  type: LoadBalancer" >> k8s-deployment.yaml
-    @echo "  selector:" >> k8s-deployment.yaml
-    @echo "    app: {{image_name}}" >> k8s-deployment.yaml
-    @echo "  ports:" >> k8s-deployment.yaml
-    @echo "  - port: 80" >> k8s-deployment.yaml
-    @echo "    targetPort: 80" >> k8s-deployment.yaml
-    @echo "Generated k8s-deployment.yaml"
-
-# Deploy to GKE
-gke-deploy: gke-generate-yaml
-    kubectl apply -f k8s-deployment.yaml
-    @echo "\nWaiting for external IP (this may take a few minutes)..."
-    @echo "Run: kubectl get service {{image_name}} --watch"
-
-# Get GKE service IP
-gke-ip:
-    kubectl get service {{image_name}} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-
-# Delete GKE deployment
-gke-down:
-    kubectl delete -f k8s-deployment.yaml || true
-    gcloud container clusters delete cmd-injection-cluster --zone {{zone}} --quiet
-
-# === Compute Engine Deployment ===
-
-# Deploy to Compute Engine VM
-compute-deploy:
-    gcloud compute instances create-with-container cmd-injection-vm \
-        --container-image=gcr.io/{{project_id}}/{{image_name}} \
-        --machine-type=e2-micro \
+# Create GCP VM instance with Container-Optimized OS
+gcp-create-instance:
+    gcloud compute instances create cmd-injection-vm \
+        --project={{project_id}} \
         --zone={{zone}} \
+        --machine-type=e2-micro \
+        --image-family=cos-stable \
+        --image-project=cos-cloud \
+        --boot-disk-size=10GB \
         --tags=http-server
-    gcloud compute firewall-rules create allow-http \
-        --allow tcp:80 \
-        --target-tags http-server \
-        --source-ranges 0.0.0.0/0 || true
 
-# Get Compute Engine external IP
-compute-ip:
+# Create firewall rule to allow HTTP traffic
+gcp-create-firewall:
+    gcloud compute firewall-rules create allow-http-cmd-injection \
+        --project={{project_id}} \
+        --allow=tcp:80 \
+        --target-tags=http-server
+
+# Copy files to GCP instance
+gcp-copy-files:
+    gcloud compute scp --zone={{zone}} --recurse \
+        Dockerfile index.html vulnerable.php safe.php \
+        cmd-injection-vm:~/
+
+# Build and run container on VM (run after SSH)
+gcp-build-container:
+    @echo "Run these commands after SSHing into the VM:"
+    @echo "  docker build -t {{image_name}} ."
+    @echo "  docker run -d -p 80:80 --name {{image_name}} {{image_name}}"
+    @echo "  sudo iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT"
+
+# SSH into the GCP instance
+gcp-ssh:
+    gcloud compute ssh cmd-injection-vm --zone={{zone}}
+
+# Get the external IP of the instance
+gcp-ip:
     @gcloud compute instances describe cmd-injection-vm \
         --zone={{zone}} \
         --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
 
-# SSH into Compute Engine VM
-compute-ssh:
-    gcloud compute ssh cmd-injection-vm --zone={{zone}}
+# View container logs
+gcp-logs:
+    gcloud compute ssh cmd-injection-vm --zone={{zone}} \
+        --command="docker logs {{image_name}}"
 
-# Delete Compute Engine deployment
-compute-down:
+# Delete GCP resources
+gcp-cleanup:
     gcloud compute instances delete cmd-injection-vm --zone={{zone}} --quiet
-    gcloud compute firewall-rules delete allow-http --quiet
+    gcloud compute firewall-rules delete allow-http-cmd-injection --quiet
 
 # === Helper Commands ===
 
