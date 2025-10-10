@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Command Injection Lab - Sleep Timer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            max-width: 900px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .warning {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 30px;
+        }
+
+        .warning h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+
+        .warning p {
+            color: #856404;
+            line-height: 1.6;
+        }
+
+        .versions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .version-card {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .version-card:hover {
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .version-card.vulnerable {
+            border-color: #dc3545;
+        }
+
+        .version-card.safe {
+            border-color: #28a745;
+        }
+
+        .version-card h2 {
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .version-card.vulnerable h2 {
+            color: #dc3545;
+        }
+
+        .version-card.safe h2 {
+            color: #28a745;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-vulnerable {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-vulnerable:hover {
+            background: #c82333;
+        }
+
+        .btn-safe {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-safe:hover {
+            background: #218838;
+        }
+
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .result pre {
+            background: rgba(0, 0, 0, 0.1);
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .examples {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .examples h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .example-item {
+            margin-bottom: 15px;
+        }
+
+        .example-item strong {
+            color: #dc3545;
+            font-family: monospace;
+        }
+
+        .example-item p {
+            color: #666;
+            margin-top: 5px;
+            line-height: 1.6;
+        }
+
+        @media (max-width: 768px) {
+            .versions {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Command Injection Lab</h1>
+        <p class="subtitle">Linux Sleep Timer Demo</p>
+
+        <div class="warning">
+            <h3>Educational Purpose Only</h3>
+            <p>This lab demonstrates command injection vulnerabilities for educational purposes.
+            The vulnerable version shows how unsanitized input can be exploited, while the safe
+            version demonstrates proper input validation and secure coding practices.</p>
+        </div>
+
+        <div class="versions">
+            <div class="version-card vulnerable">
+                <h2>Vulnerable Version</h2>
+                <form id="vulnerable-form">
+                    <div class="form-group">
+                        <label for="vulnerable-seconds">Seconds to sleep:</label>
+                        <input type="text" id="vulnerable-seconds" name="seconds" placeholder="e.g., 5">
+                    </div>
+                    <button type="submit" class="btn-vulnerable">Execute (Vulnerable)</button>
+                </form>
+                <div id="vulnerable-result" class="result"></div>
+            </div>
+
+            <div class="version-card safe">
+                <h2>Safe Version</h2>
+                <form id="safe-form">
+                    <div class="form-group">
+                        <label for="safe-seconds">Seconds to sleep:</label>
+                        <input type="text" id="safe-seconds" name="seconds" placeholder="e.g., 5">
+                    </div>
+                    <button type="submit" class="btn-safe">Execute (Safe)</button>
+                </form>
+                <div id="safe-result" class="result"></div>
+            </div>
+        </div>
+
+        <div class="examples">
+            <h3>Try These Command Injection Examples (Vulnerable Side Only):</h3>
+
+            <div class="example-item">
+                <strong>5; whoami</strong>
+                <p>Sleep for 5 seconds, then show the current user</p>
+            </div>
+
+            <div class="example-item">
+                <strong>2; ls -la</strong>
+                <p>Sleep for 2 seconds, then list directory contents</p>
+            </div>
+
+            <div class="example-item">
+                <strong>1; cat /etc/passwd</strong>
+                <p>Sleep for 1 second, then display system users</p>
+            </div>
+
+            <div class="example-item">
+                <strong>0; pwd</strong>
+                <p>Show current working directory immediately</p>
+            </div>
+
+            <div class="example-item">
+                <strong>3 && echo "Injected!"</strong>
+                <p>Using && operator to chain commands</p>
+            </div>
+
+            <div class="example-item">
+                <strong>1 | cat /etc/hostname</strong>
+                <p>Using pipe operator to chain commands</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function submitForm(formId, endpoint, resultId) {
+            const form = document.getElementById(formId);
+            const result = document.getElementById(resultId);
+
+            const formData = new FormData(form);
+
+            result.style.display = 'block';
+            result.className = 'result';
+            result.innerHTML = '<p>Executing...</p>';
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    result.className = 'result error';
+                    result.innerHTML = `<strong>Error:</strong> ${data.error}`;
+                } else {
+                    result.className = 'result success';
+                    result.innerHTML = `
+                        <p><strong>Success!</strong></p>
+                        <p>Requested: ${data.requested} seconds</p>
+                        <p>Elapsed: ${data.elapsed} seconds</p>
+                        <p>Command executed: <code>${data.command}</code></p>
+                        <p>Return code: ${data.return_code}</p>
+                        ${data.output && data.output.length > 0 ? `<p>Output: </p><pre>${data.output.join('\n')}</pre>` : ''}
+                    `;
+                }
+            } catch (error) {
+                result.className = 'result error';
+                result.innerHTML = `<strong>Error:</strong> ${error.message}`;
+            }
+        }
+
+        document.getElementById('vulnerable-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await submitForm('vulnerable-form', 'vulnerable.php', 'vulnerable-result');
+        });
+
+        document.getElementById('safe-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await submitForm('safe-form', 'safe.php', 'safe-result');
+        });
+    </script>
+</body>
+</html>
