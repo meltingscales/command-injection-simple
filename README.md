@@ -82,11 +82,19 @@ docker rm command-injection-lab
 
 ### Quick Setup (10 minutes)
 
-#### 1. Create GCP Compute Engine Instance
+#### 1. Set Your Project ID
+
+First, set your GCP project ID as an environment variable:
+
+```bash
+export PROJECT_ID="your-project-id"
+```
+
+#### 2. Create GCP Compute Engine Instance
 
 ```bash
 gcloud compute instances create cmd-injection-vm \
-  --project=YOUR_PROJECT_ID \
+  --project=$PROJECT_ID \
   --zone=us-central1-a \
   --machine-type=e2-micro \
   --image-family=cos-stable \
@@ -97,15 +105,14 @@ gcloud compute instances create cmd-injection-vm \
 
 Or using just:
 ```bash
-export PROJECT_ID="your-project-id"
 just gcp-create-instance
 ```
 
-#### 2. Create Firewall Rule
+#### 3. Create Firewall Rule
 
 ```bash
 gcloud compute firewall-rules create allow-http-cmd-injection \
-  --project=YOUR_PROJECT_ID \
+  --project=$PROJECT_ID \
   --allow=tcp:80 \
   --target-tags=http-server
 ```
@@ -115,7 +122,7 @@ Or using just:
 just gcp-create-firewall
 ```
 
-#### 3. Copy Files and Build Container
+#### 4. Copy Files and Build Container
 
 Copy files to the GCP instance:
 
@@ -148,7 +155,7 @@ docker build -t command-injection-lab .
 docker run -d -p 80:80 --name command-injection-lab command-injection-lab
 ```
 
-#### 4. Fix Container-Optimized OS Firewall
+#### 5. Fix Container-Optimized OS Firewall
 
 Container-Optimized OS has iptables rules that block external traffic. Add a rule to allow port 80:
 
@@ -162,7 +169,7 @@ Exit the SSH session:
 exit
 ```
 
-#### 5. Get External IP
+#### 6. Get External IP
 
 ```bash
 gcloud compute instances describe cmd-injection-vm \
@@ -175,7 +182,7 @@ Or using just:
 just gcp-ip
 ```
 
-#### 6. Test the Application
+#### 7. Test the Application
 
 ```bash
 curl http://YOUR_EXTERNAL_IP
