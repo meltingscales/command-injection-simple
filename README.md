@@ -2,6 +2,8 @@
 
 An educational lab demonstrating command injection vulnerabilities using a simple sleep timer implemented in PHP.
 
+See [CURL.md](./CURL.md) for examples of injection attacks you can run in the terminal.
+
 ## Overview
 
 This lab provides two versions of a web-based sleep timer:
