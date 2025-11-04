@@ -32,11 +32,37 @@ This lab provides two versions of a web-based sleep timer:
 └── README.md          # This file
 ```
 
-## Quick Start (Local Development)
+## Quick Start (Cloud Run Deployment)
 
-### Prerequisites
-- Docker installed on your system
-- [just](https://github.com/casey/just) command runner (optional but recommended)
+Deploy to Google Cloud Run for an automatic `*.run.app` domain:
+
+```bash
+just deploy YOUR_PROJECT_ID
+```
+
+This will build and deploy the lab, giving you a URL like `https://cmd-injection-lab-xxxxx-uc.a.run.app`
+
+### Available Commands
+
+```bash
+just deploy PROJECT_ID      # Deploy to Cloud Run
+just get-url PROJECT_ID     # Get your service URL
+just logs PROJECT_ID        # View logs
+just logs-follow PROJECT_ID # Follow logs in real-time
+just test PROJECT_ID        # Test both endpoints
+just delete PROJECT_ID      # Delete the service
+```
+
+### Benefits
+
+- **No IP blocking**: Gets automatic `*.run.app` domain
+- **Cost effective**: Only pay when handling requests (likely free tier)
+- **Auto-scaling**: Scales to zero when idle
+- **No infrastructure**: No VMs to manage
+
+## Prerequisites
+- [just](https://github.com/casey/just) command runner
+- gcloud CLI configured with your GCP project
 
 ### Running Locally
 

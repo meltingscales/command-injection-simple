@@ -1,119 +1,68 @@
-# Command Injection Lab - Justfile
-# Run commands with: just <command-name>
+# Command Injection Lab - Cloud Run Deployment
+# Deploys to Google Cloud Run with automatic *.run.app domain
 
-# Default values - customize these
-project_id := env_var_or_default('PROJECT_ID', 'your-project-id')
-region := env_var_or_default('REGION', 'us-central1')
-zone := env_var_or_default('ZONE', 'us-central1-a')
-image_name := "command-injection-lab"
-
-# Show available commands
+# Default recipe - show available commands
 default:
     @just --list
 
-# === Docker Commands ===
+# Deploy to Cloud Run (gets automatic *.run.app domain)
+deploy PROJECT_ID:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Build image with Cloud Build
+    gcloud builds submit \
+      --tag gcr.io/{{PROJECT_ID}}/cmd-injection-lab \
+      --project={{PROJECT_ID}}
+    # Deploy to Cloud Run
+    gcloud run deploy cmd-injection-lab \
+      --image gcr.io/{{PROJECT_ID}}/cmd-injection-lab \
+      --platform managed \
+      --region us-central1 \
+      --allow-unauthenticated \
+      --port 8080 \
+      --memory 512Mi \
+      --cpu 1 \
+      --timeout 60 \
+      --max-instances 1 \
+      --project={{PROJECT_ID}}
+    echo ""
+    echo "Deployment complete! Your URL:"
+    gcloud run services describe cmd-injection-lab \
+      --region us-central1 \
+      --project={{PROJECT_ID}} \
+      --format='value(status.url)'
 
-# Build the Docker image
-build:
-    docker build -t {{image_name}} .
+# Get service URL
+get-url PROJECT_ID:
+    gcloud run services describe cmd-injection-lab \
+      --region us-central1 \
+      --project={{PROJECT_ID}} \
+      --format='value(status.url)'
 
-# Run the container locally on port 8080
-run:
-    docker run -d -p 8080:80 --name {{image_name}} {{image_name}}
-    @echo "Application running at http://localhost:8080"
+# View logs
+logs PROJECT_ID:
+    gcloud run services logs read cmd-injection-lab \
+      --region us-central1 \
+      --project={{PROJECT_ID}} \
+      --limit 50
 
-# Stop the running container
-stop:
-    docker stop {{image_name}}
-    docker rm {{image_name}}
+# Follow logs in real-time
+logs-follow PROJECT_ID:
+    gcloud run services logs tail cmd-injection-lab \
+      --region us-central1 \
+      --project={{PROJECT_ID}}
 
-# View container logs
-logs:
-    docker logs -f {{image_name}}
+# Delete service
+delete PROJECT_ID:
+    gcloud run services delete cmd-injection-lab \
+      --region us-central1 \
+      --project={{PROJECT_ID}}
 
-# Restart the container
-restart: stop run
-
-# Build and run
-up: build run
-
-# Clean up Docker resources
-clean:
-    -docker stop {{image_name}}
-    -docker rm {{image_name}}
-    -docker rmi {{image_name}}
-
-# === GCP Compute Engine Deployment ===
-
-# Create GCP VM instance with Container-Optimized OS
-gcp-create-instance:
-    gcloud compute instances create cmd-injection-vm \
-        --project={{project_id}} \
-        --zone={{zone}} \
-        --machine-type=e2-micro \
-        --image-family=cos-stable \
-        --image-project=cos-cloud \
-        --boot-disk-size=10GB \
-        --tags=http-server
-
-# Create firewall rule to allow HTTP traffic
-gcp-create-firewall:
-    gcloud compute firewall-rules create allow-http-cmd-injection \
-        --project={{project_id}} \
-        --allow=tcp:80 \
-        --target-tags=http-server
-
-# Copy files to GCP instance
-gcp-copy-files:
-    gcloud compute scp --zone={{zone}} --recurse \
-        Dockerfile index.html vulnerable.php safe.php \
-        cmd-injection-vm:~/
-
-# Build and run container on VM (run after SSH)
-gcp-build-container:
-    @echo "Run these commands after SSHing into the VM:"
-    @echo "  docker build -t {{image_name}} ."
-    @echo "  docker run -d -p 80:80 --name {{image_name}} {{image_name}}"
-    @echo "  sudo iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT"
-
-# SSH into the GCP instance
-gcp-ssh:
-    gcloud compute ssh cmd-injection-vm --zone={{zone}}
-
-# Get the external IP of the instance
-gcp-ip:
-    @gcloud compute instances describe cmd-injection-vm \
-        --zone={{zone}} \
-        --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
-
-# View container logs
-gcp-logs:
-    gcloud compute ssh cmd-injection-vm --zone={{zone}} \
-        --command="docker logs {{image_name}}"
-
-# Delete GCP resources
-gcp-cleanup:
-    gcloud compute instances delete cmd-injection-vm --zone={{zone}} --quiet
-    gcloud compute firewall-rules delete allow-http-cmd-injection --quiet
-
-# === Helper Commands ===
-
-# Show current configuration
-config:
-    @echo "Current Configuration:"
-    @echo "  Project ID: {{project_id}}"
-    @echo "  Region:     {{region}}"
-    @echo "  Zone:       {{zone}}"
-    @echo "  Image:      {{image_name}}"
-    @echo ""
-    @echo "To override, set environment variables:"
-    @echo "  export PROJECT_ID=my-project"
-    @echo "  export REGION=us-west1"
-    @echo "  export ZONE=us-west1-a"
-
-# Test application locally (requires running container)
-test:
-    @echo "Testing vulnerable endpoint..."
-    @curl -s -X POST -d "seconds=2" http://localhost:8080/vulnerable.php | jq .
-    @echo "\nTesting safe endpoint..."
-    @curl -s -X POST -d "seconds=2" http://localhost:8080/safe.php | jq .
+# Test connection
+test PROJECT_ID:
+    #!/usr/bin/env bash
+    URL=$(gcloud run services describe cmd-injection-lab --region us-central1 --project={{PROJECT_ID}} --format='value(status.url)')
+    echo "Testing vulnerable endpoint..."
+    curl -s -X POST -d "seconds=1" "$URL/vulnerable.php"
+    echo -e "\n\nTesting safe endpoint..."
+    curl -s -X POST -d "seconds=1" "$URL/safe.php"

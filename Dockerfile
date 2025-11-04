@@ -18,8 +18,11 @@ COPY safe.php /var/www/html/
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html
 
-# Expose port 80
-EXPOSE 80
+# Configure Apache for Cloud Run (port 8080)
+RUN sed -i 's/80/8080/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
+
+# Expose port 8080
+EXPOSE 8080
 
 # Start Apache in foreground
 CMD ["apache2-foreground"]
